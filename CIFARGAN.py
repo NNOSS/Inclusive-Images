@@ -4,26 +4,28 @@ import tensorlayer as tl
 import numpy as np
 from tensorlayer.layers import *
 
-BASE_X = 7
-BASE_Y = 7
-IMAGE_SIZE = 28,28,1
+BASE_X = 4
+BASE_Y = 4
+IMAGE_SIZE = 32,32,3
 Z_SIZE = 32
-Z2_SIZE = 34
-D_CONVOLUTIONS = [-32, -64, 64]
+Z2_SIZE = 128
+D_CONVOLUTIONS = [-32, -64, -128, 256]
 D_HIDDEN_SIZE = 1000
-G_CONVOLUTIONS = [128, -64,-32]
+G_CONVOLUTIONS = [256, -128,-64,-32]
+G_PROJECTIONS = [32,32,32]
 NUM_CLASSES = 10
-LEARNING_RATE = 1e-4
-MOMENTUM = .9
-BATCH_SIZE = 64
-FILEPATH = '/Data/MNIST_data/'
-TRAIN_INPUT = FILEPATH + 'train-images-idx3-ubyte'
-TRAIN_LABEL = FILEPATH + 'train-labels-idx1-ubyte'
-PERM_MODEL_FILEPATH = '/Models/MNIST/model.ckpt' #filepaths to model and summaries
-SUMMARY_FILEPATH ='/Models/MNIST/Summaries/'
+D_LEARNING_RATE = 1e-4
+G_LEARNING_RATE = 1e-4
+MOMENTUM = 0
+BATCH_SIZE = 256
+FILEPATH = '/Data/CIFAR10/cifar-10-batches-bin/'
+TRAIN_INPUT = [FILEPATH + 'data_batch_1.bin', FILEPATH + 'data_batch_2.bin',
+    FILEPATH + 'data_batch_3.bin', FILEPATH + 'data_batch_4.bin', FILEPATH + 'data_batch_5.bin']
+PERM_MODEL_FILEPATH = '/Models/CIFAR10/model.ckpt' #filepaths to model and summaries
+SUMMARY_FILEPATH ='/Models/CIFAR10/Summaries/'
 
 RESTORE = False
-WHEN_DISP = 10
+WHEN_DISP = 30
 WHEN_SAVE = 2000
 MAX_OUTPUTS = 16
 ITERATIONS = 1000000
@@ -31,21 +33,17 @@ ITERATIONS = 1000000
 def decode_image(image):
     # Normalize from [0, 255] to [0.0, 1.0]
     image = tf.decode_raw(image, tf.uint8)
-    image = tf.cast(image, tf.float32)
-    image = tf.reshape(image, [IMAGE_SIZE[0], IMAGE_SIZE[1], 1])
-    return image / 255.0
+    label = image[0]
+    image = tf.cast(image[1:], tf.float32)
+    image = tf.reshape(image, [3, IMAGE_SIZE[0], IMAGE_SIZE[1]])
+    image = tf.transpose(image, [1,2,0])
+    return image / 255.0, label
 
-def decode_label(label):
-    label = tf.decode_raw(label, tf.uint8)
-    label = tf.reshape(label, [1])
-    return  label
 
 def return_datatset_train():
     images = tf.data.FixedLengthRecordDataset(
-      TRAIN_INPUT, IMAGE_SIZE[0] * IMAGE_SIZE[1] * 1, header_bytes=16).map(decode_image)
-    labels = tf.data.FixedLengthRecordDataset(
-      TRAIN_LABEL, 1, header_bytes=8).map(decode_label)
-    return tf.data.Dataset.zip((images, labels))
+      TRAIN_INPUT, IMAGE_SIZE[0] * IMAGE_SIZE[1] * 3 + 1).map(decode_image)
+    return images#tf.data.Dataset.zip((images, labels))
 
 def create_discriminator(x_image, classes, reuse = False):
     '''Create a discrimator, not the convolutions may be negative to represent
@@ -60,13 +58,19 @@ def create_discriminator(x_image, classes, reuse = False):
         res = inputs
         for i,v in enumerate(D_CONVOLUTIONS):
             '''Similarly tile for constant reference to class'''
+            convVals = Conv2d(convVals,abs(v), (1, 1), act=tf.nn.leaky_relu,strides =(1,1),name='d_conv_3_%i'%(i))
+            batch = BatchNormLayer(convVals,act=tf.nn.leaky_relu, is_train=True,name='d_bn_1_%i'%(i))
+            conv = Conv2d(batch,abs(v), (3, 3), strides =(1,1),name='d_conv_1_%i'%(i))
+            batch = BatchNormLayer(conv,act=tf.nn.leaky_relu, is_train=True,name='d_bn_2_%i'%(i))
+            conv = Conv2d(batch,abs(v), (3, 3), strides =(1,1),name='d_conv_2_%i'%(i))
+            convVals = InputLayer(convVals.outputs + conv.outputs, name='d_res_sum_%i'%(i))
             if v < 0:
                 v *= -1
-                strides = (2,2)
+                convVals = Conv2d(convVals,v, (3, 3), act=tf.nn.leaky_relu,strides =(2,2),name='d_conv_3_%i'%(i))
             else:
-                strides = (1,1)
+                convVals = Conv2d(convVals,v, (3, 3), act=tf.nn.leaky_relu,strides =(1,1),name='d_conv_3_%i'%(i))
+
             #add necessary convolutional layers
-            convVals = Conv2d(convVals, v, (3, 3),strides = strides, name='d_conv1_%s'%(i))
                 # fully connecter layer
         flat3 = FlattenLayer(convVals, name = 'd_flatten')
         inputClass =InputLayer(classes, name='d_class_inputs')
@@ -83,11 +87,8 @@ def create_generator(z, classes):
         class_matrix = tf.get_variable("gen_mapping_w", [NUM_CLASSES, Z_SIZE, Z2_SIZE])
         bias_matrix = tf.get_variable("gen_mapping_b", [NUM_CLASSES, Z2_SIZE])
         class_selection = tf.expand_dims(tf.argmax(classes, axis = 1), -1)
-        print(class_selection.get_shape())
         selected_weights = tf.gather_nd(class_matrix, class_selection)
         selected_biases =  tf.gather_nd(bias_matrix, class_selection)
-        print(selected_weights.get_shape())
-        print(selected_biases.get_shape())
         z2 = tf.squeeze(tf.matmul(tf.expand_dims(z,1), selected_weights),1)
         z2 += selected_biases
         inputs = InputLayer(z2, name='gen_inputs')
@@ -96,30 +97,45 @@ def create_generator(z, classes):
         print(numPools)
         xs, ys = IMAGE_SIZE[0]/(2**numPools), IMAGE_SIZE[1]/(2**numPools) #calculate start image size from numPools
         sizeDeconv = xs * ys * abs(G_CONVOLUTIONS[0])
-        conat_layer = ConcatLayer([inputs, inputClass], 1, name ='gen_concat_layer_z2')
+        # conat_layer = ConcatLayer([inputs, inputClass], 1, name ='gen_concat_layer_z2')
         # print(conat_layer.get_shape())
-        deconveInputFlat = DenseLayer(conat_layer, sizeDeconv, act = tf.nn.relu, name = 'gen_fdeconv')#dense layer to input to be reshaped
+        deconveInputFlat = DenseLayer(inputs, sizeDeconv, act = tf.nn.relu, name = 'gen_fdeconv')#dense layer to input to be reshaped
         convVals = ReshapeLayer(deconveInputFlat, (-1, BASE_X, BASE_Y, abs(G_CONVOLUTIONS[0])), name = 'gen_unflatten')
-        upsample = False
+
         for i,v in enumerate(G_CONVOLUTIONS[1:]):#for every convolution
+
+            convVals = Conv2d(convVals,abs(v), (1, 1), act=tf.nn.leaky_relu,strides =(1,1),name='d_conv_0_%i'%(i))
+            batch = BatchNormLayer(convVals,act=tf.nn.leaky_relu, is_train=True,name='gen_bn_1_%i'%(i))
+            batch.gamma, batch.beta = double_projection(z, classes, v, i)
+            tf.nn.batch_normalization#TODO
+            conv = Conv2d(batch,abs(v), (3, 3), strides =(1,1),name='gen_deconv_1_%i'%(i))
+            batch = BatchNormLayer(conv,act=tf.nn.leaky_relu, is_train=True,name='gen_bn_2_%i'%(i))
+            conv = Conv2d(batch,abs(v), (3, 3), strides =(1,1),name='gen_deconv_2_%i'%(i))
+            convVals = InputLayer(convVals.outputs + conv.outputs, name='res_sum_%i'%(i))
             if v < 0:
                 v *= -1
                 convVals = UpSampling2dLayer(convVals, (2,2),name='gen_upsample_%i'%(i))
-                convVals = Conv2d(convVals,v, (3, 3), strides =(1,1),name='gen_deconv_1_%i'%(i))
+                convVals = Conv2d(convVals,v, (3, 3), strides =(1,1),name='gen_deconv_3_%i'%(i))
             else:
-                convVals = Conv2d(convVals,v, (3, 3), strides =(1,1),name='gen_deconv_1_%i'%(i))
-            batch = BatchNormLayer(convVals,act=tf.nn.leaky_relu, is_train=True,name='gen_bn_1_%i'%(i))
-            conv = Conv2d(batch,v, (3, 3), strides =(1,1),name='gen_deconv_1_%i'%(i))
-            batch = BatchNormLayer(conv,act=tf.nn.leaky_relu, is_train=True,name='gen_bn_2_%i'%(i))
-            conv = Conv2d(batch,v, (3, 3), strides =(1,1),name='gen_deconv_2_%i'%(i))
-            convVals = InputLayer(convVals.outputs + conv.outputs, name='res_sum_%i'%(i))
+                convVals = Conv2d(convVals,v, (3, 3), strides =(1,1),name='gen_deconv_3_%i'%(i))
 
         batch = BatchNormLayer(convVals,act=tf.nn.relu, is_train=True,name='gen_bn_final')
-        convVals = Conv2d(batch,1, (3, 3), strides = (1,1), act=tf.nn.tanh,name='gen_fake_input')
+        convVals = Conv2d(batch,3, (3, 3), strides = (1,1), act=tf.nn.tanh,name='gen_fake_input')
         return tf.nn.relu(convVals.outputs) #return flattened outputs
+def double_projection(z,classes,v, i):
+    class_matrix = tf.get_variable('gen_mapping_w_%i'%(i), [NUM_CLASSES, Z_SIZE, G_PROJECTIONS[i]])
+    bias_matrix = tf.get_variable('gen_mapping_b_%i'%(i), [NUM_CLASSES, G_PROJECTIONS[i]])
+    class_selection = tf.expand_dims(tf.argmax(classes, axis = 1), -1)
+    selected_weights = tf.gather_nd(class_matrix, class_selection)
+    selected_biases =  tf.gather_nd(bias_matrix, class_selection)
+    z2 = tf.squeeze(tf.matmul(tf.expand_dims(z,1), selected_weights),1)
+    z2 += selected_biases
+    batch_gamma = tf.layers.dense(z2, abs(v), bias_initializer = tf.ones_initializer(), name='gamma_projection_%i'%(i))
+    batch_beta = tf.layers.dense(z2, abs(v), name='beta_projection_%i'%(i))
+    return batch_gamma, batch_beta
 
 def build_model(x, classes):
-    classes = tf.squeeze(classes, axis = 1)
+    # classes = tf.squeeze(classes, axis = 1)
     classes_one =tf.one_hot(classes, NUM_CLASSES)
     fake_classes_one = tf.one_hot(classes, NUM_CLASSES)
     y = tf.expand_dims(tf.ones_like(classes, dtype=tf.float32),-1)
@@ -148,7 +164,7 @@ def build_model(x, classes):
         tf.nn.sigmoid_cross_entropy_with_logits(labels=y, logits=y_conv)) + tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(labels=fake_y, logits=fake_y_conv))# reduce mean for discriminator
     d_cross_entropy_summary = tf.summary.scalar('d_loss',d_cross_entropy)
-    train_step = tf.train.AdamOptimizer(LEARNING_RATE,beta1=MOMENTUM).minimize(d_cross_entropy, var_list = d_vars)
+    train_step = tf.train.AdamOptimizer(D_LEARNING_RATE,beta1=MOMENTUM).minimize(d_cross_entropy, var_list = d_vars)
     final_true = tf.round(tf.sigmoid(y_conv))
     final_false = tf.round(tf.sigmoid(fake_y_conv))
     accuracy_real = tf.reduce_mean(tf.cast(tf.equal(final_true, y), tf.float32))#determine various accuracies
@@ -158,11 +174,12 @@ def build_model(x, classes):
 
     gen_cross_entropy = tf.reduce_mean(
         tf.nn.sigmoid_cross_entropy_with_logits(labels=y, logits=fake_y_conv))#reduce mean for generator
-    gen_train_step = tf.train.AdamOptimizer(LEARNING_RATE,beta1=MOMENTUM).minimize(gen_cross_entropy,var_list = gen_vars)
+    gen_train_step = tf.train.AdamOptimizer(G_LEARNING_RATE,beta1=MOMENTUM).minimize(gen_cross_entropy,var_list = gen_vars)
     gen_cross_entropy_summary = tf.summary.scalar('g_loss',gen_cross_entropy)
     scalar_summary = tf.summary.merge([d_cross_entropy_summary,gen_cross_entropy_summary,accuracy_summary_real,accuracy_summary_fake])
     image_summary = tf.summary.merge([real_input_summary,fake_input_summary])
     return scalar_summary, image_summary, train_step, gen_train_step
+
 
 if __name__ == "__main__":
     sess = tf.Session()#start the session
@@ -185,12 +202,14 @@ if __name__ == "__main__":
         saver_perm.save(sess, PERM_MODEL_FILEPATH)
     train_writer = tf.summary.FileWriter(SUMMARY_FILEPATH,
                                   sess.graph)
+    trains = [train_step, train_step,gen_train_step]
     for i in range(ITERATIONS):
+        train = trains[i%3]
         if not i % WHEN_DISP:
-            input_summary_ex, image_summary_ex, _, _= sess.run([scalar_summary, image_summary, train_step, gen_train_step])
+            input_summary_ex, image_summary_ex, _= sess.run([scalar_summary, image_summary, train])
             train_writer.add_summary(image_summary_ex, i)
         else:
-            input_summary_ex, _, _= sess.run([scalar_summary, train_step, gen_train_step])
+            input_summary_ex, _= sess.run([scalar_summary, train])
         train_writer.add_summary(input_summary_ex, i)
 
         if not i % WHEN_SAVE:
