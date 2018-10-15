@@ -4,28 +4,28 @@ import tensorlayer as tl
 import numpy as np
 from tensorlayer.layers import *
 
-BASE_X = 4
-BASE_Y = 4
-IMAGE_SIZE = 32,32,3
-Z_SIZE = 64
+BASE_X = 7
+BASE_Y = 7
+IMAGE_SIZE = 28,28,1
+Z_SIZE = 32
 Z2_SIZE = 32
-D_CONVOLUTIONS = [-32, -64, -128, 256]
+D_CONVOLUTIONS = [-32, -64, 128]
 D_HIDDEN_SIZE = 1000
-G_CONVOLUTIONS = [256, -128,-64,-32]
+G_CONVOLUTIONS = [128, -64,-32]
 G_PROJECTIONS = [16,16,16]
 NUM_CLASSES = 10
-D_LEARNING_RATE = 3e-5
+D_LEARNING_RATE = 2e-5
 G_LEARNING_RATE = 1e-4
 MOMENTUM = .5
 BATCH_SIZE = 256
-FILEPATH = '/Data/CIFAR10/cifar-10-batches-bin/'
-TRAIN_INPUT = [FILEPATH + 'data_batch_1.bin', FILEPATH + 'data_batch_2.bin',
-    FILEPATH + 'data_batch_3.bin', FILEPATH + 'data_batch_4.bin', FILEPATH + 'data_batch_5.bin']
-PERM_MODEL_FILEPATH = '/Models/CIFAR10/model.ckpt' #filepaths to model and summaries
-SUMMARY_FILEPATH ='/Models/CIFAR10/Summaries/'
+FILEPATH = '/Data/FashionMNIST/'
+TRAIN_INPUT = FILEPATH + 'train-images-idx3-ubyte'
+TRAIN_LABEL = FILEPATH + 'train-labels-idx1-ubyte'
+PERM_MODEL_FILEPATH = '/Models/FashionMNIST/model.ckpt' #filepaths to model and summaries
+SUMMARY_FILEPATH ='/Models/FashionMNIST/Summaries/'
 
-RESTORE = False
-WHEN_DISP = 50
+RESTORE = True
+WHEN_DISP = 100
 NUM_OUTPUTS = 20
 WHEN_SAVE = 2000
 MAX_OUTPUTS = 16
@@ -34,17 +34,22 @@ ITERATIONS = 1000000
 def decode_image(image):
     # Normalize from [0, 255] to [0.0, 1.0]
     image = tf.decode_raw(image, tf.uint8)
-    label = image[0]
-    image = tf.cast(image[1:], tf.float32)
-    image = tf.reshape(image, [3, IMAGE_SIZE[0], IMAGE_SIZE[1]])
-    image = tf.transpose(image, [1,2,0])
-    return image / 255.0, label
+    image = tf.cast(image, tf.float32)
+    image = tf.reshape(image, [IMAGE_SIZE[0], IMAGE_SIZE[1], 1])
+    return image / 255.0
 
+def decode_label(label):
+    label = tf.decode_raw(label, tf.uint8)
+    label = tf.reshape(label, [1])
+    return  label
 
 def return_datatset_train():
     images = tf.data.FixedLengthRecordDataset(
-      TRAIN_INPUT, IMAGE_SIZE[0] * IMAGE_SIZE[1] * 3 + 1).map(decode_image)
-    return images#tf.data.Dataset.zip((images, labels))
+      TRAIN_INPUT, IMAGE_SIZE[0] * IMAGE_SIZE[1] * 1, header_bytes=16).map(decode_image)
+    labels = tf.data.FixedLengthRecordDataset(
+      TRAIN_LABEL, 1, header_bytes=8).map(decode_label)
+    return tf.data.Dataset.zip((images, labels))
+
 
 def create_discriminator(x_image, classes, reuse = False):
     '''Create a discrimator, not the convolutions may be negative to represent
@@ -129,7 +134,7 @@ def create_generator(z, classes):
                 convVals = Conv2d(convVals,v, (3, 3), strides =(1,1),name='gen_deconv_3_%i'%(i))
 
         batch = BatchNormLayer(convVals,act=tf.nn.relu, is_train=True,name='gen_bn_final')
-        convVals = Conv2d(batch,3, (1, 1), strides = (1,1), act=tf.nn.tanh,name='gen_fake_input')
+        convVals = Conv2d(batch,IMAGE_SIZE[2], (1, 1), strides = (1,1), act=tf.nn.tanh,name='gen_fake_input')
         return tf.nn.relu(convVals.outputs) #return flattened outputs
 
 
@@ -182,7 +187,11 @@ def my_batch_norm_map(x,classes,v, i):
 def my_batch_norm_disc(x,classes,v, i):
     '''manual batch norm because tensorflow can't set beta or gamma'''
     with tf.variable_scope('batch_norm_%i'%(i)) as scope:
+        print(classes.get_shape())
+
         class_max =tf.argmax(classes, axis = 1)
+        print(class_max.get_shape())
+
         epsilon = 1e-8
         mean, variance = tf.nn.moments(x, axes=[0,1,2])
         x_normed = (x - mean) / tf.sqrt(variance + epsilon)
@@ -199,6 +208,7 @@ def my_batch_norm_disc(x,classes,v, i):
 
 def build_model(x, classes):
     # classes = tf.squeeze(classes, axis = 1)
+    classes = tf.squeeze(classes, 1)
 
     classes_one =tf.one_hot(classes, NUM_CLASSES)
     fake_classes_one = tf.one_hot(classes, NUM_CLASSES)
