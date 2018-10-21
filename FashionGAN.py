@@ -3,6 +3,7 @@ import tensorflow as tf
 import tensorlayer as tl
 import numpy as np
 from tensorlayer.layers import *
+import testerModel
 
 BASE_X = 7
 BASE_Y = 7
@@ -118,7 +119,7 @@ def create_generator(z, classes):
 
         for i,v in enumerate(G_CONVOLUTIONS[1:]):#for every convolution
 
-            convVals = Conv2d(convVals,abs(v), (1, 1), act=tf.nn.leaky_relu,strides =(1,1),name='d_conv_0_%i'%(i))
+            convVals = Conv2d(convVals,abs(v), (1, 1), act=tf.nn.leaky_relu,strides =(1,1),name='gen_conv_0_%i'%(i))
             batch = my_batch_norm_map(convVals.outputs,classes, v, i)
             batch = tf.nn.leaky_relu(batch)
             batch = InputLayer(batch)
@@ -206,9 +207,9 @@ def my_batch_norm_disc(x,classes,v, i):
         new_x = tf.einsum('abcd,ad->abcd',x_normed, batch_gamma) + batch_beta
         return new_x
 
-def build_model(x, classes):
+def build_model(x, og_classes):
     # classes = tf.squeeze(classes, axis = 1)
-    classes = tf.squeeze(classes, 1)
+    classes = tf.squeeze(og_classes, 1)
 
     classes_one =tf.one_hot(classes, NUM_CLASSES)
     fake_classes_one = tf.one_hot(classes, NUM_CLASSES)
@@ -222,6 +223,7 @@ def build_model(x, classes):
     z = tf.random_normal(m)
 
     fake_input = create_generator(z,fake_classes_one) #generator
+    test_summary, _ = testerModel.build_model(fake_input, tf.cast(og_classes,dtype=tf.int32))
     fake_y_conv = create_discriminator(fake_input,fake_classes_one,reuse = True)#fake image discrimator
     with tf.variable_scope('logistics') as scope:
         fake_input_summary = tf.summary.image("fake_inputs", fake_input,max_outputs = NUM_OUTPUTS)#show fake image
@@ -252,7 +254,7 @@ def build_model(x, classes):
     gen_cross_entropy_summary = tf.summary.scalar('g_loss',gen_cross_entropy)
     scalar_summary = tf.summary.merge([d_cross_entropy_summary,gen_cross_entropy_summary,accuracy_summary_real,accuracy_summary_fake])
     image_summary = tf.summary.merge([real_input_summary,fake_input_summary])
-    return scalar_summary, image_summary, train_step, gen_train_step
+    return scalar_summary, image_summary, train_step, gen_train_step,test_summary
 
 
 if __name__ == "__main__":
@@ -262,13 +264,19 @@ if __name__ == "__main__":
     train_iterator = train_ship.make_initializable_iterator()
     train_input, train_label = train_iterator.get_next()
     sess.run([train_iterator.initializer])
-    scalar_summary, image_summary, train_step, gen_train_step = build_model(train_input, train_label)
+    scalar_summary, image_summary, train_step, gen_train_step, test_summary = build_model(train_input, train_label)
 
     ##########################################################################
     #Call function to make tf models
     ##########################################################################
     sess.run(tf.global_variables_initializer())
-    saver_perm = tf.train.Saver()
+    t_vars = tf.trainable_variables()
+    _ =testerModel.init_model(sess)
+    
+    d_vars = [var for var in t_vars if 'd_' in var.name] #find trainable discriminator variable
+    print(d_vars)
+    gen_vars = [var for var in t_vars if 'gen_' in var.name]
+    saver_perm = tf.train.Saver(var_list =d_vars + gen_vars)
     if PERM_MODEL_FILEPATH is not None and RESTORE:
         saver_perm.restore(sess, PERM_MODEL_FILEPATH)
     else:
@@ -280,8 +288,9 @@ if __name__ == "__main__":
     for i in range(ITERATIONS):
         train = trains[i%3]
         if not i % WHEN_DISP:
-            input_summary_ex, image_summary_ex, _= sess.run([scalar_summary, image_summary, train])
+            input_summary_ex, image_summary_ex, test_summary_ex,_= sess.run([scalar_summary, image_summary, test_summary, train])
             train_writer.add_summary(image_summary_ex, i)
+            train_writer.add_summary(test_summary_ex, i)
         else:
             input_summary_ex, _= sess.run([scalar_summary, train])
         train_writer.add_summary(input_summary_ex, i)
