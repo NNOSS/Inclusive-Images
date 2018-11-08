@@ -19,7 +19,7 @@ TRAIN_LABEL = FILEPATH + 'train-labels-idx1-ubyte'
 TEST_INPUT = FILEPATH + 't10k-images-idx3-ubyte'
 TEST_LABEL = FILEPATH + 't10k-labels-idx1-ubyte'
 PERM_MODEL_FILEPATH = '/Models/LabelFashionMNIST/model.ckpt' #filepaths to model and summaries
-SUMMARY_FILEPATH ='/Models/LabelFashionMNIST/summaries/'
+SUMMARY_FILEPATH ='/Models/LabelFashionMNIST/Summaries/'
 
 RESTORE = True
 WHEN_SAVE = 2000
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     test_input, test_label = test_iterator.get_next()
     sess.run([train_iterator.initializer,test_iterator.initializer])
     scalar_summary, train_step = build_model(train_input, train_label)
-    test_scalar_summary, _ = build_model(train_input, train_label, reuse=True)
+    test_scalar_summary, _ = build_model(test_input, test_label, reuse=True)
 
     ##########################################################################
     #Call function to make tf models
