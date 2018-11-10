@@ -6,27 +6,26 @@ from tensorlayer.layers import *
 # import testerModel
 from projectionMethods import *
 
-MODELS_NAME = ['Classical', 'SOTA', 'Ours']
+MODELS_NAME = ['Classical','Projection', 'Ours', 'Class BN']
 WHICH_MODEL = 1
 BASE_X = 64/16
 BASE_Y = 64/16
 IMAGE_SIZE = 64, 64,3
-Z_SIZE = 64
+Z_SIZE = 120
 D_CONVOLUTIONS = [-64, -128, -256, -512]
 D_HIDDEN_SIZE = 1000
-G_CONVOLUTIONS = [512,-256,-128, -64]
-G_PROJECTIONS = [4,4,4,4,4]
-NUM_CLASSES = 20
+G_CONVOLUTIONS = [-512,-256,-128, -64]
+NUM_CLASSES = 100
 D_LEARNING_RATE = 2e-4
 G_LEARNING_RATE = 1e-4
 MOMENTUM = 0
-BATCH_SIZE = 200
+BATCH_SIZE = 128
 FILEPATH = '/Data/FashionMNIST/'
 
-TRAIN_INPUT_SAVE = '/Data/Imagenet/IN2010/train_images_20'
-TRAIN_LABEL_SAVE = '/Data/Imagenet/IN2010/train_labels_20'
-PERM_MODEL_FILEPATH = '/Models/ImageNet20/model.ckpt'
-SUMMARY_FILEPATH = '/Models/ImageNet20/Summaries/'
+TRAIN_INPUT_SAVE = '/Data/Imagenet/IN2010/train_images_100'
+TRAIN_LABEL_SAVE = '/Data/Imagenet/IN2010/train_labels_100'
+PERM_MODEL_FILEPATH = '/Models/ImageNet100/model.ckpt'
+SUMMARY_FILEPATH = '/Models/ImageNet100/Summaries/'
 
 RESTORE = False
 WHEN_DISP = 50
@@ -61,30 +60,39 @@ def create_discriminator(x_image, classes, reuse = False):
     with tf.variable_scope("d_discriminator") as scope:
         if reuse: #get previous variable if we are reusing the discriminator but with fake images
             scope.reuse_variables()
+        embedding = DenseLayer(InputLayer(classes), abs(D_CONVOLUTIONS[-1]),  name = 'd_embed').outputs
+        # embedding = embedding / tf.reduce_sum(tf.norm(embedding, axis=1))
+
         xs, ys = IMAGE_SIZE[0],IMAGE_SIZE[1]
         convVals = x_image
         for i,v in enumerate(D_CONVOLUTIONS):
             '''Similarly tile for constant reference to class'''
-            if v < 0:
-                v *= -1
-                convVals = conv_spectral(convVals,v, (5, 5), act=tf.nn.relu,strides =(2,2),name='d_conv_0_%i'%(i))
-            else:
-                convVals = conv_spectral(convVals,v, (3, 3), act=tf.nn.relu,strides =(1,1),name='d_conv_0_%i'%(i))
+
+                # convVals = conv_spectral(convVals,v, (5, 5), act=tf.nn.relu,strides =(2,2),name='d_conv_0_%i'%(i))
+            # else:
+            #     convVals = conv_spectral(convVals,v, (3, 3), act=tf.nn.relu,strides =(1,1),name='d_conv_0_%i'%(i))
             # if WHICH_MODEL ==0:
             #     batch = BatchNormLayer(convVals,act=tf.nn.relu, is_train=True,name='d_bn_1_%i'%(i))
             #     batch = feature_concat(batch.outputs, classes)
             # else:
-            batch = batch_norm_disc(convVals,classes, v, 0, i)
-            batch = tf.nn.relu(batch)
+            # batch = batch_norm_disc(convVals,classes, v, 0, i)
+            batch = tf.nn.relu(convVals)
             conv = conv_spectral(batch,abs(v), (3, 3), strides =(1,1),name='d_conv_1_%i'%(i))
             # if WHICH_MODEL ==0:
             #     batch = BatchNormLayer(convVals,act=tf.nn.relu, is_train=True,name='d_bn_1_%i'%(i))
             #     batch = feature_concat(batch.outputs, classes)
             # else:
-            batch = batch_norm_disc(conv,classes, v, 1, i)
-            batch = tf.nn.relu(batch)
+            # batch = batch_norm_disc(conv,classes, v, 1, i)
+            batch = tf.nn.relu(conv)
             conv = conv_spectral(batch,abs(v), (3, 3), strides =(1,1),name='d_conv_2_%i'%(i))
+            convVals = conv_spectral(convVals,abs(v), (1, 1), act=tf.nn.relu,strides =(1,1),name='d_conv_0_%i'%(i))
+
+            if v < 0:
+                v *= -1
+                convVals = tf.nn.pool(convVals, (2, 2), "AVG",'SAME',strides =(2,2),name='res_downsample_%i'%(i))
+                conv = tf.nn.pool(conv, (2, 2), "AVG",'SAME',strides =(2,2),name='downsample_%i'%(i))
             convVals = convVals + conv
+
             #add necessary convolutional layers
                 # fully connecter layer
         flat = tf.reduce_sum(tf.reduce_sum(tf.nn.relu(convVals),axis=1),axis=1)
@@ -95,8 +103,8 @@ def create_discriminator(x_image, classes, reuse = False):
         # hid3 = DenseLayer(flat3, D_HIDDEN_SIZE,act = tf.nn.relu, name = 'd_fcl')
         # hid3 = DropoutLayer(hid3, keep=0.85, is_fix=True,name='drop')
         y_conv = DenseLayer(flatI, 1,  name = 'd_output').outputs
-        embed = DenseLayer(InputLayer(classes), abs(D_CONVOLUTIONS[-1]),  name = 'd_embed').outputs
-        effect = tf.reduce_sum( tf.multiply( flat, embed ), 1, keep_dims=True )
+        # flat = flat / tf.reduce_sum(tf.norm(flat, axis=1))
+        effect = tf.reduce_sum( tf.multiply( flat, embedding ), 1, keep_dims=True )
         return y_conv + effect
 
 def create_generator(z, classes):
@@ -104,6 +112,9 @@ def create_generator(z, classes):
     Note that in convolutions, negative convolutions mean downsampling'''
     # Generator Net
     with tf.variable_scope("gen_generator") as scope:
+        embedding = DenseLayer(InputLayer(classes), abs(D_CONVOLUTIONS[-1]),  name = 'gen_embed').outputs
+        # embedding = embedding / tf.reduce_sum(tf.norm(embedding, axis=1))
+
         if WHICH_MODEL == 2:
             class_matrix = tf.get_variable("gen_mapping_w", [NUM_CLASSES, Z_SIZE])
             bias_matrix = tf.get_variable("gen_mapping_b", [NUM_CLASSES, Z_SIZE])
@@ -111,7 +122,9 @@ def create_generator(z, classes):
             selected_weights = tf.gather_nd(class_matrix, class_selection)
             selected_biases =  tf.gather_nd(bias_matrix, class_selection)
             z = z * selected_weights + selected_biases
-        inputs = InputLayer(z, name='gen_inputs')
+        splits = len(G_CONVOLUTIONS) + 1
+        z_cut = tf.reshape(z,(-1,splits,Z_SIZE/splits))
+        inputs = InputLayer(z_cut[:,0,:], name='gen_inputs')
         inputClass =InputLayer(classes, name='gen_class_inputs_z')
         numPools = sum([1 for i in G_CONVOLUTIONS if i < 0]) #count number of total convolutions
         print(numPools)
@@ -122,19 +135,20 @@ def create_generator(z, classes):
         convVals = ReshapeLayer(deconveInputFlat, (-1, BASE_X, BASE_Y, abs(G_CONVOLUTIONS[0])), name = 'gen_unflatten')
 
         for i,v in enumerate(G_CONVOLUTIONS):#for every convolution
+            z_current = z_cut[:,i+1,:]
             if v < 0:
                 v *= -1
                 convVals = UpSampling2dLayer(convVals, (2,2),name='gen_upsample_%i'%(i))
-            convVals = Conv2d(convVals,v, (3, 3), strides =(1,1),name='gen_deconv_0_%i'%(i))
-            batch = return_rep(WHICH_MODEL,convVals,classes, v, 0,i)
+            batch = return_rep(WHICH_MODEL,convVals,classes, convVals.outputs.get_shape()[3], z_current, embedding, 0,i)
             batch = InputLayer(batch)
             conv = Conv2d(batch,abs(v), (3, 3), strides =(1,1),name='gen_deconv_1_%i'%(i))
-            batch = return_rep(WHICH_MODEL,conv,classes, v, 1,i)
+            batch = return_rep(WHICH_MODEL,conv,classes, v, z_current, embedding, 1,i)
             batch = InputLayer(batch)
             conv = Conv2d(batch,abs(v), (3, 3), strides =(1,1),name='gen_deconv_2_%i'%(i))
+            convVals = Conv2d(convVals,v, (1, 1), strides =(1,1),name='gen_deconv_0_%i'%(i))
             convVals = InputLayer(convVals.outputs + conv.outputs, name='res_sum_%i'%(i))
         batch = BatchNormLayer(convVals,act=tf.nn.relu, is_train=True,name='gen_bn_final')
-        batch = UpSampling2dLayer(batch, (2,2),name='gen_upsample_final')
+        # batch = UpSampling2dLayer(batch, (2,2),name='gen_upsample_final')
         convVals = Conv2d(batch,IMAGE_SIZE[2], (3, 3), strides = (1,1), act=tf.nn.tanh,name='gen_fake_input')
         return convVals.outputs #return flattened outputs
 
@@ -146,11 +160,12 @@ def build_model(x, og_classes):
     y = tf.expand_dims(tf.ones_like(classes, dtype=tf.float32),-1)
     fake_y = tf.expand_dims(tf.zeros_like(classes, dtype=tf.float32),-1)
     y_conv = create_discriminator(x,classes_one) #real image discrimator
+
         # print(classes.get_shape())
         # m = classes.get_shape()
     m = tf.shape(classes)
     m = tf.concat([m,[Z_SIZE]],0)
-    z = tf.random_normal(m)
+    z = tf.truncated_normal(m)
 
     fake_input = create_generator(z,fake_classes_one) #generator
     # test_summary, _ = testerModel.build_model(fake_input, tf.cast(og_classes,dtype=tf.int32))
@@ -169,12 +184,11 @@ def build_model(x, og_classes):
         print(y.get_shape())
         print(y_conv.get_shape())
 
-        d_cross_entropy = tf.reduce_mean(
-            tf.losses.hinge_loss(labels=y, logits=y_conv)) + tf.reduce_mean(
-                tf.losses.hinge_loss(labels=fake_y, logits=fake_y_conv))# reduce mean for discriminator
+        d_cross_entropy = tf.reduce_mean(tf.nn.relu(1-y_conv)) + tf.reduce_mean(tf.nn.relu(1+fake_y_conv))
+        # tf.reduce_mean(
+        #         tf.losses.hinge_loss(labels=fake_y, logits=fake_y_conv))# reduce mean for discriminator
         d_cross_entropy_summary = tf.summary.scalar('d_loss',d_cross_entropy)
-        gen_cross_entropy = tf.reduce_mean(
-            tf.losses.hinge_loss(labels=y, logits=fake_y_conv))#reduce mean for generator
+        gen_cross_entropy =  -1 *tf.reduce_mean(fake_y_conv)
         y_conv = tf.sigmoid(y_conv)
         fake_y_conv = tf.sigmoid(fake_y_conv)
         final_true = tf.round(y_conv)
@@ -206,9 +220,9 @@ def train_model():
     t_vars = tf.trainable_variables()
     # _ =testerModel.init_model(sess)
 
-    d_vars = [var for var in t_vars if 'd_' in var.name] #find trainable discriminator variable
-    gen_vars = [var for var in t_vars if 'gen_' in var.name]
-    saver_perm = tf.train.Saver(var_list =d_vars + gen_vars)
+    # d_vars = [var for var in t_vars if 'd_' in var.name] #find trainable discriminator variable
+    # gen_vars = [var for var in t_vars if 'gen_' in var.name]
+    saver_perm = tf.train.Saver()
     if PERM_MODEL_FILEPATH is not None and RESTORE:
         saver_perm.restore(sess, PERM_MODEL_FILEPATH)
     else:

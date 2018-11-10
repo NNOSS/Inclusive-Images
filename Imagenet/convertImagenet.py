@@ -62,14 +62,14 @@ class FromJPEG:
 
 if __name__ == '__main__':
     IMAGENET_PATH = '/Data/Imagenet/IN2010/ILSVRC2010_images_train/'
-    TRAIN_INPUT_SAVE = '/Data/Imagenet/IN2010/train_images_20'
-    TRAIN_LABEL_SAVE = '/Data/Imagenet/IN2010/train_labels_20'
+    TRAIN_INPUT_SAVE = '/Data/Imagenet/IN2010/train_images_100'
+    TRAIN_LABEL_SAVE = '/Data/Imagenet/IN2010/train_labels_100'
     HEIGHT, WIDTH = 64, 64
     batch_size= 100
     NUM_CLASSES = 1000
     print('Start')
 
-    NUM_CLASSES_SAVE = 20
+    NUM_CLASSES_SAVE = 100
     I_2010 = []
     CLASS_PATHS = glob(os.path.join(IMAGENET_PATH,'*'))
     CLASS_PATHS = CLASS_PATHS[:NUM_CLASSES_SAVE]
