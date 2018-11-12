@@ -8,24 +8,26 @@ from projectionMethods import *
 
 MODELS_NAME = ['Classical','Projection', 'Ours', 'Class BN']
 WHICH_MODEL = 1
-BASE_X = 64/16
-BASE_Y = 64/16
-IMAGE_SIZE = 64, 64,3
+BASE_X = 96/16
+BASE_Y = 96/16
+IMAGE_SIZE = 96, 96,3
 Z_SIZE = 120
 D_CONVOLUTIONS = [-64, -128, -256, -512]
-D_HIDDEN_SIZE = 1000
-G_CONVOLUTIONS = [-512,-256,-128, -64]
-NUM_CLASSES = 100
+# D_HIDDEN_SIZE = 1000
+D_EMBED_SIZE = 256
+G_CONVOLUTIONS = [-512, -256,-128, -64]
+G_EMBED_SIZE = 64
+NUM_CLASSES = 2
 D_LEARNING_RATE = 2e-4
 G_LEARNING_RATE = 1e-4
 MOMENTUM = 0
-BATCH_SIZE = 128
-FILEPATH = '/Data/FashionMNIST/'
-
-TRAIN_INPUT_SAVE = '/Data/Imagenet/IN2010/train_images_100'
-TRAIN_LABEL_SAVE = '/Data/Imagenet/IN2010/train_labels_100'
-PERM_MODEL_FILEPATH = '/Models/ImageNet100/model.ckpt'
-SUMMARY_FILEPATH = '/Models/ImageNet100/Summaries/'
+BATCH_SIZE = 64
+# FILEPATH = '/Data/FashionMNIST/'
+IMAGENET_PATH = '/Data/Imagenet/DogsvCats/train/'
+TRAIN_INPUT_SAVE = '/Data/Imagenet/DogsvCats/train_images'
+TRAIN_LABEL_SAVE = '/Data/Imagenet/DogsvCats/train_labels'
+PERM_MODEL_FILEPATH = '/Models/ImageDC/model.ckpt'
+SUMMARY_FILEPATH = '/Models/ImageDC/Summaries/'
 
 RESTORE = False
 WHEN_DISP = 50
@@ -60,7 +62,7 @@ def create_discriminator(x_image, classes, reuse = False):
     with tf.variable_scope("d_discriminator") as scope:
         if reuse: #get previous variable if we are reusing the discriminator but with fake images
             scope.reuse_variables()
-        embedding = DenseLayer(InputLayer(classes), abs(D_CONVOLUTIONS[-1]),  name = 'd_embed').outputs
+        embedding = DenseLayer(InputLayer(classes), D_EMBED_SIZE,  name = 'd_embed').outputs
         # embedding = embedding / tf.reduce_sum(tf.norm(embedding, axis=1))
 
         xs, ys = IMAGE_SIZE[0],IMAGE_SIZE[1]
@@ -104,7 +106,7 @@ def create_discriminator(x_image, classes, reuse = False):
         # hid3 = DropoutLayer(hid3, keep=0.85, is_fix=True,name='drop')
         y_conv = DenseLayer(flatI, 1,  name = 'd_output').outputs
         # flat = flat / tf.reduce_sum(tf.norm(flat, axis=1))
-        effect = tf.reduce_sum( tf.multiply( flat, embedding ), 1, keep_dims=True )
+        effect = tf.reduce_sum( tf.multiply( flat[:, :D_EMBED_SIZE], embedding ), 1, keep_dims=True )
         return y_conv + effect
 
 def create_generator(z, classes):
@@ -112,7 +114,7 @@ def create_generator(z, classes):
     Note that in convolutions, negative convolutions mean downsampling'''
     # Generator Net
     with tf.variable_scope("gen_generator") as scope:
-        embedding = DenseLayer(InputLayer(classes), abs(D_CONVOLUTIONS[-1]),  name = 'gen_embed').outputs
+        embedding = DenseLayer(InputLayer(classes), G_EMBED_SIZE,  name = 'gen_embed').outputs
         # embedding = embedding / tf.reduce_sum(tf.norm(embedding, axis=1))
 
         if WHICH_MODEL == 2:

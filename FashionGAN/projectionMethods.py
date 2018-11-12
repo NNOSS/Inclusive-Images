@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 from tensorlayer.layers import *
 
-NUM_CLASSES = 20
+NUM_CLASSES = 2
 
 def return_rep(WHICH_MODEL,x,classes,v, z, embedding, i, i2):
     if WHICH_MODEL == 0:
