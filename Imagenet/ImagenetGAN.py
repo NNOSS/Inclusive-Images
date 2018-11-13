@@ -1,5 +1,6 @@
 import sys
 sys.path.append('./../FashionGAN')
+import os
 import tensorflow as tf
 import numpy as np
 from tensorlayer.layers import *
@@ -12,22 +13,34 @@ BASE_X = 96/16
 BASE_Y = 96/16
 IMAGE_SIZE = 96, 96,3
 Z_SIZE = 120
-D_CONVOLUTIONS = [-64, -128, -256, -512]
+D_CONVOLUTIONS = [-32, -64, 32, -128, -256]
+D_TRANSFORM = [0,0,1,0,0]
+
 # D_HIDDEN_SIZE = 1000
 D_EMBED_SIZE = 256
-G_CONVOLUTIONS = [-512, -256,-128, -64]
-G_EMBED_SIZE = 64
+G_CONVOLUTIONS = [ -256,-128, 32,-64, -32]
+G_TRANSFORM = [0,0,1,0,0]
+G_EMBED_SIZE = 6
 NUM_CLASSES = 2
 D_LEARNING_RATE = 2e-4
 G_LEARNING_RATE = 1e-4
 MOMENTUM = 0
 BATCH_SIZE = 64
 # FILEPATH = '/Data/FashionMNIST/'
+ssh = True
 IMAGENET_PATH = '/Data/Imagenet/DogsvCats/train/'
 TRAIN_INPUT_SAVE = '/Data/Imagenet/DogsvCats/train_images'
 TRAIN_LABEL_SAVE = '/Data/Imagenet/DogsvCats/train_labels'
-PERM_MODEL_FILEPATH = '/Models/ImageDC/model.ckpt'
-SUMMARY_FILEPATH = '/Models/ImageDC/Summaries/'
+PERM_MODEL_FILEPATH = '/Models/ImageNet/DC_Trans/model.ckpt'
+SUMMARY_FILEPATH = '/Models/ImageNet/DC_Trans/Summaries/'
+if ssh:
+    os.environ["CUDA_VISIBLE_DEVICES"]="-1"
+    IMAGENET_PATH = '/Data/Imagenet/DogsvCats/train/'
+    TRAIN_INPUT_SAVE = '/data2/user_data/gsteelman/Data/Imagenet/DogsvCats/train_images'
+    TRAIN_LABEL_SAVE = '/data2/user_data/gsteelman/Data/Imagenet/DogsvCats/train_labels'
+    PERM_MODEL_FILEPATH = '/data2/user_data/gsteelman/Models/ImageNet/DC_Trans/model.ckpt'
+    SUMMARY_FILEPATH = '/data2/user_data/gsteelman/Models/ImageNet/DC_Trans/Summaries/'
+
 
 RESTORE = False
 WHEN_DISP = 50
@@ -69,6 +82,9 @@ def create_discriminator(x_image, classes, reuse = False):
         convVals = x_image
         for i,v in enumerate(D_CONVOLUTIONS):
             '''Similarly tile for constant reference to class'''
+            if D_TRANSFORM[i]:
+                convVals = transformer_sota(InputLayer(convVals), 1, v, i).outputs
+                continue
 
                 # convVals = conv_spectral(convVals,v, (5, 5), act=tf.nn.relu,strides =(2,2),name='d_conv_0_%i'%(i))
             # else:
@@ -137,6 +153,9 @@ def create_generator(z, classes):
         convVals = ReshapeLayer(deconveInputFlat, (-1, BASE_X, BASE_Y, abs(G_CONVOLUTIONS[0])), name = 'gen_unflatten')
 
         for i,v in enumerate(G_CONVOLUTIONS):#for every convolution
+            if G_TRANSFORM[i]:
+                convVals = transformer_sota(convVals, 1, v, i)
+                continue
             z_current = z_cut[:,i+1,:]
             if v < 0:
                 v *= -1

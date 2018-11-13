@@ -5,6 +5,7 @@ from tensorlayer.layers import *
 
 NUM_CLASSES = 2
 
+
 def return_rep(WHICH_MODEL,x,classes,v, z, embedding, i, i2):
     if WHICH_MODEL == 0:
         batch = BatchNormLayer(x,act=tf.nn.relu, is_train=True,name='gen_bn_%i_%i'%(i,i2))
@@ -110,6 +111,62 @@ def batch_norm_disc(x,classes,v,i,i2):
         batch_beta = tf.tile(batch_beta,[1,xs, ys,1])
         new_x = tf.einsum('abcd,ad->abcd',x_normed, batch_gamma) + batch_beta
         return new_x
+
+def transformer_sota(x, n_trans, v, i):
+    '''Transformer Layer State Of The Art Method'''
+    if n_trans == 0:
+    	return x
+
+    with tf.variable_scope('transformer_%i'%(i)) as scope:
+        """f_k = tf.get_variable('f_k_%i'%(i), [1])
+        g_k = tf.get_variable('g_k_%i'%(i), 1)
+        h_k = tf.get_variable('h_k_%i'%(i), 1)"""
+
+        _, og_h, og_w, og_f = x.outputs.get_shape()
+
+        n_filt = v
+        fconv = Conv2d(x, n_filt, (1, 1), strides =(1,1),name='f_%i'%(i))
+        gconv = Conv2d(x, n_filt, (1, 1), strides =(1,1),name='g_%i'%(i))
+        hconv = Conv2d(x, n_filt, (1, 1), strides =(1,1),name='h_%i'%(i))
+
+        print("convs")
+        print(fconv.outputs.get_shape())
+        print(gconv.outputs.get_shape())
+        print(hconv.outputs.get_shape())
+
+
+        freshape = ReshapeLayer(fconv, [-1, og_h * og_w, n_filt], name='f_reshape_%i'%(i)).outputs
+        greshape = ReshapeLayer(gconv, [-1, og_h * og_w, n_filt], name='g_reshape_%i'%(i)).outputs
+        hreshape = ReshapeLayer(hconv, [-1, og_h * og_w, n_filt], name='h_reshape_%i'%(i)).outputs
+
+        print("reshapes")
+        print(freshape.get_shape())
+        print(greshape.get_shape())
+        print(hreshape.get_shape())
+
+        pre_map = tf.matmul(freshape, tf.transpose(greshape, [0, 2, 1]), name='pre_attention_%i'%(i))
+        with tf.variable_scope('softmax_%i'%(i)) as scope:
+            att_map = tf.nn.softmax(pre_map, axis=1)
+
+        print("maps")
+        print(pre_map.get_shape())
+        print(att_map.get_shape())
+
+        unshaped_focus = tf.matmul(att_map, hreshape, name='pre_focus%i'%(i))
+        focus = tf.reshape(unshaped_focus, [-1, og_h, og_w, n_filt])
+
+        focus = Conv2d(InputLayer(focus), og_f, (1, 1), strides =(1,1),name='focus_%i'%(i)).outputs
+
+        #My conv2d
+        #focus = tf.nn.conv2d(focus, filter=tf.get_variable("focuser", [1, 1, n_filt, og_f]), strides=[1,1,1,1], padding="SAME", name ='focus%i'%(i))
+        #focus = tf.add(focus, tf.get_variable("focus_bias", focus.get_shape()[1:]), name = "focus_bias_add")
+
+        out = InputLayer(focus + x.outputs, name = 'resnet_%i'%(i))
+
+        print("focuses")
+        print(unshaped_focus.get_shape())
+        print(focus.get_shape())
+    return out
 
 def spectral_norm(w, iteration=1):
    w_shape = w.shape.as_list()
