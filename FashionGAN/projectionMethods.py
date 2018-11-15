@@ -8,14 +8,14 @@ NUM_CLASSES = 2
 
 def return_rep(WHICH_MODEL,x,classes,v, z, embedding, i, i2):
     if WHICH_MODEL == 0:
-        batch = BatchNormLayer(x,act=tf.nn.relu, is_train=True,name='gen_bn_%i_%i'%(i,i2))
-        batch = feature_concat(batch.outputs, classes)
+        batch = BatchNormLayer(InputLayer(x),act=tf.nn.relu, is_train=True,name='gen_bn_%i_%i'%(i,i2))
+        batch = feature_concat(batch, classes)
     elif WHICH_MODEL ==1:
-        batch = batch_norm_sota(x.outputs,classes, v, z,embedding, i,i2)
+        batch = batch_norm_sota(x,classes, v, z,embedding, i,i2)
     elif WHICH_MODEL == 2:
-        batch = batch_norm_map(x.outputs,classes, v, z,embedding, i,i2)
+        batch = batch_norm_map(x,classes, v, z,embedding, i,i2)
     elif WHICH_MODEL == 3:
-        batch = batch_norm_cond(x.outputs,classes, v, embedding, i,i2)
+        batch = batch_norm_cond(x,classes, v, embedding, i,i2)
     return batch
 
 def batch_norm_map(x,classes,v, z, embedding,i,i2):

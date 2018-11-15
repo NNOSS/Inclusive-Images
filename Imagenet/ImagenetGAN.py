@@ -9,28 +9,30 @@ from projectionMethods import *
 
 MODELS_NAME = ['Classical','Projection', 'Ours', 'Class BN']
 WHICH_MODEL = 1
-BASE_X = 96/16
-BASE_Y = 96/16
-IMAGE_SIZE = 96, 96,3
+BASE_X = 64/16
+BASE_Y = 64/16
+IMAGE_SIZE = 64, 64,3
 Z_SIZE = 120
-D_CONVOLUTIONS = [-64, 32, -128, -256,-512]
-D_TRANSFORM = [0,1,0,0,0]
+D_CH = 64
+D_CONVOLUTIONS = [-1*D_CH, -2*D_CH, -4*D_CH,-8*D_CH]
+D_TRANSFORM = [0,0,0,0]
 
 # D_HIDDEN_SIZE = 1000
 D_EMBED_SIZE = 256
-G_CONVOLUTIONS = [-512, -256,-128,32, -64]
-G_TRANSFORM = [0,0,0,1,0]
-G_EMBED_SIZE = 6
+G_CH = 64
+G_CONVOLUTIONS = [-8*G_CH, -4*G_CH,-2*G_CH, -1*G_CH]
+G_TRANSFORM = [0,0,0,0]
+G_EMBED_SIZE = 6cd
 NUM_CLASSES = 2
 D_LEARNING_RATE = 2e-4
 G_LEARNING_RATE = 1e-4
 MOMENTUM = 0
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 # FILEPATH = '/Data/FashionMNIST/'
-ssh = True
+ssh = False
 IMAGENET_PATH = '/Data/Imagenet/DogsvCats/train/'
-TRAIN_INPUT_SAVE = '/Data/Imagenet/DogsvCats/train_images'
-TRAIN_LABEL_SAVE = '/Data/Imagenet/DogsvCats/train_labels'
+TRAIN_INPUT_SAVE = '/Data/Imagenet/DogsvCats/train_images_64'
+TRAIN_LABEL_SAVE = '/Data/Imagenet/DogsvCats/train_labels_64'
 PERM_MODEL_FILEPATH = '/Models/ImageNet/DC_Trans/model.ckpt'
 SUMMARY_FILEPATH = '/Models/ImageNet/DC_Trans/Summaries/'
 if ssh:

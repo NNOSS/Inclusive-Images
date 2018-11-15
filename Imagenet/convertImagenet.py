@@ -65,9 +65,9 @@ class FromJPEG:
 
 if __name__ == '__main__':
     IMAGENET_PATH = '/Data/Imagenet/DogsvCats/train/'
-    TRAIN_INPUT_SAVE = '/Data/Imagenet/DogsvCats/train_images'
-    TRAIN_LABEL_SAVE = '/Data/Imagenet/DogsvCats/train_labels'
-    HEIGHT, WIDTH = 96, 96
+    TRAIN_INPUT_SAVE = '/Data/Imagenet/DogsvCats/train_images_64'
+    TRAIN_LABEL_SAVE = '/Data/Imagenet/DogsvCats/train_labels_64'
+    HEIGHT, WIDTH = 64, 64
     batch_size= 100
     NUM_CLASSES = 1000
     print('Start')
