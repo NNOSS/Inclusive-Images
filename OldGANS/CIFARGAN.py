@@ -22,10 +22,10 @@ G_CONVOLUTIONS = [512, -256,-128, -64]
 G_TRANSFORM = [0,0,0,0]
 G_EMBED_SIZE = 48
 NUM_CLASSES = 10
-D_LEARNING_RATE = 2e-4
-G_LEARNING_RATE = 1e-4
+D_LEARNING_RATE = 0
+G_LEARNING_RATE = 0
 MOMENTUM = 0
-BATCH_SIZE = 512
+BATCH_SIZE = 128
 
 FILEPATH = '/Data/OldData/CIFAR10/cifar-10-batches-bin/'
 TRAIN_INPUT = [FILEPATH + 'data_batch_1.bin', FILEPATH + 'data_batch_2.bin',
@@ -33,11 +33,11 @@ TRAIN_INPUT = [FILEPATH + 'data_batch_1.bin', FILEPATH + 'data_batch_2.bin',
 PERM_MODEL_FILEPATH = '/Models/CIFAR10/model.ckpt' #filepaths to model and summaries
 SUMMARY_FILEPATH ='/Models/CIFAR10/Summaries/'
 
-RESTORE = False
+RESTORE = True
 WHEN_DISP = 50
 # WHEN_TEST = 50
-NUM_OUTPUTS = 10
-WHEN_SAVE = 1000
+NUM_OUTPUTS = 30
+WHEN_SAVE = 100
 ITERATIONS = 100000
 
 
@@ -120,13 +120,13 @@ def create_generator(z, classes):
         embedding = DenseLayer(InputLayer(classes), G_EMBED_SIZE,  name = 'gen_embed').outputs
         # embedding = embedding / tf.reduce_sum(tf.norm(embedding, axis=1))
 
-        if WHICH_MODEL == 2:
-            class_matrix = tf.get_variable("gen_mapping_w", [NUM_CLASSES, Z_SIZE])
-            bias_matrix = tf.get_variable("gen_mapping_b", [NUM_CLASSES, Z_SIZE])
-            class_selection = tf.expand_dims(tf.argmax(classes, axis = 1), -1)
-            selected_weights = tf.gather_nd(class_matrix, class_selection)
-            selected_biases =  tf.gather_nd(bias_matrix, class_selection)
-            z = z * selected_weights + selected_biases
+        # if WHICH_MODEL == 2:
+        #     class_matrix = tf.get_variable("gen_mapping_w", [NUM_CLASSES, Z_SIZE])
+        #     bias_matrix = tf.get_variable("gen_mapping_b", [NUM_CLASSES, Z_SIZE])
+        #     class_selection = tf.expand_dims(tf.argmax(classes, axis = 1), -1)
+        #     selected_weights = tf.gather_nd(class_matrix, class_selection)
+        #     selected_biases =  tf.gather_nd(bias_matrix, class_selection)
+        #     z = z * selected_weights + selected_biases
         splits = len(G_CONVOLUTIONS) + 1
         z_cut = tf.reshape(z,(-1,splits,Z_SIZE/splits))
         inputs = InputLayer(z_cut[:,0,:], name='gen_inputs')
@@ -256,9 +256,43 @@ def train_model():
         # if not i % EST_ITERATIONS:
         #     print('Epoch' + str(i / EST_ITERATIONS))
 
+def test_model():
+    sess = tf.Session()#start the session
+    batch = 512
+    number_each_class = 10
+    # z = tf.placeholder(tf.float32,(number_each_class,Z_SIZE))
+    classes = tf.placeholder(tf.int32, (batch))
+    m = tf.shape(classes)
+    m = tf.concat([m,[Z_SIZE]],0)
+    z = tf.truncated_normal(m)
+    classes_one_hot= tf.one_hot(classes, NUM_CLASSES)
+    fake_input = create_generator(z,classes_one_hot)
+    _ = create_discriminator(fake_input,classes_one_hot)
+    output= tf.nn.relu(fake_input) * 255
+    sess.run(tf.global_variables_initializer())
+    saver_perm = tf.train.Saver()
+    saver_perm.restore(sess, PERM_MODEL_FILEPATH)
+    container = np.zeros((10 * 32, 10*32,3))
+    for i in range(NUM_CLASSES):
+        classes_ex = np.full(batch,i)
+        classes_ex[number_each_class:] = np.random.randint(0,NUM_CLASSES,size=(batch-number_each_class))
+        # z_ex = np.random.normal(size=(number_each_class,Z_SIZE))
+        # zeros = np.zeros((number_each_class,Z_SIZE))
+        # z_ex = np.where(np.absolute(z_ex)>2,zeros, z_ex)
+        feed_dict = {classes:classes_ex}
+        row = sess.run(output,feed_dict=feed_dict)
+        row = row[:number_each_class]
+        print(row.shape)
+        container[:,i*32:(i+1)*32,:] = np.reshape(row, (32*10, 32,3))
+    from PIL import Image
+    img = Image.fromarray(container.astype(np.uint8), 'RGB')
+    img.show()
+
+
+
 if __name__ == "__main__":
     NUM_TRIALS = 5
-    train_model()
+    test_model()
     #
     # for i in range(NUM_TRIALS):
     #     for j in range(len(MODELS_NAME)):

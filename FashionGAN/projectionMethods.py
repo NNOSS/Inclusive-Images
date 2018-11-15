@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 from tensorlayer.layers import *
 
-NUM_CLASSES = 2
+NUM_CLASSES = 10
 
 
 def return_rep(WHICH_MODEL,x,classes,v, z, embedding, i, i2):
@@ -29,15 +29,18 @@ def batch_norm_map(x,classes,v, z, embedding,i,i2):
         mean, variance = tf.nn.moments(x, axes=[0,1,2])
         x_normed = (x - mean) / tf.sqrt(variance + epsilon)
         z_size = z.get_shape()[1]
-        # class_matrix = tf.get_variable('gen_mapping_w_%i_%i'%(i,i2), [NUM_CLASSES, z_size])
-        # bias_matrix = tf.get_variable('gen_mapping_b_%i_%i'%(i,i2), [NUM_CLASSES, z_size])
-        # class_selection = tf.expand_dims(class_max, -1)
-        # selected_weights = tf.gather_nd(class_matrix, class_selection)
-        # selected_biases =  tf.gather_nd(bias_matrix, class_selection)
-        # z2 = z * selected_weights + selected_biases
-        z2 = tf.concat([z,embedding], axis = -1)
-        batch_gamma = tf.layers.dense(z2, v, name='gen_gamma_projection_%i_%i'%(i,i2))
-        batch_beta = tf.layers.dense(z2, v, name='gen_beta_projection_%i_%i'%(i,i2))
+        class_matrix = tf.get_variable('gen_mapping_w_%i_%i'%(i,i2), [NUM_CLASSES, v,z_size])
+        bias_matrix = tf.get_variable('gen_mapping_b_%i_%i'%(i,i2), [NUM_CLASSES, v,z_size])
+        class_matrix_bias = tf.get_variable('gen_mapping_w_b_%i_%i'%(i,i2), [NUM_CLASSES, v])
+        bias_matrix_bias = tf.get_variable('gen_mapping_b_b_%i_%i'%(i,i2), [NUM_CLASSES, v])
+
+        class_selection = tf.expand_dims(class_max, -1)
+        selected_weights = tf.gather_nd(class_matrix, class_selection)
+        selected_biases =  tf.gather_nd(bias_matrix, class_selection)
+        selected_weights_bias = tf.gather_nd(class_matrix_bias, class_selection)
+        selected_biases_bias =  tf.gather_nd(bias_matrix_bias, class_selection)
+        batch_gamma = tf.squeeze(tf.matmul(selected_weights,tf.expand_dims(z,-1)),2) + selected_weights_bias
+        batch_beta = tf.squeeze(tf.matmul(selected_biases,tf.expand_dims(z,-1)),2) + selected_biases_bias
         batch_beta = tf.expand_dims(tf.expand_dims(batch_beta,1),1)
         _,xs,ys,_ = x_normed.get_shape()
         batch_beta = tf.tile(batch_beta,[1,xs, ys,1])
