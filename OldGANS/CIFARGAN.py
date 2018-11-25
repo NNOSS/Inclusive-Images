@@ -257,6 +257,11 @@ def train_model():
         #     print('Epoch' + str(i / EST_ITERATIONS))
 
 def test_model():
+    import compareImages
+    FILEPATH = '/Data/OldData/CIFAR10/cifar-10-batches-bin/'
+    TRAIN_INPUT = [FILEPATH + 'data_batch_1.bin', FILEPATH + 'data_batch_2.bin',
+        FILEPATH + 'data_batch_3.bin', FILEPATH + 'data_batch_4.bin', FILEPATH + 'data_batch_5.bin']
+    arr, ogarr = compareImages.read_data(TRAIN_INPUT)
     sess = tf.Session()#start the session
     batch = 512
     number_each_class = 10
@@ -284,6 +289,9 @@ def test_model():
         row = row[:number_each_class]
         print(row.shape)
         container[:,i*32:(i+1)*32,:] = np.reshape(row, (32*10, 32,3))
+        compareImages.compare_image(arr,row[0].astype(np.uint8),ogarr)
+
+
     from PIL import Image
     img = Image.fromarray(container.astype(np.uint8), 'RGB')
     img.show()
